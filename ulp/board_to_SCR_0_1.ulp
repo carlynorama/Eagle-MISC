@@ -1,0 +1,166 @@
+/**********************************************************************
+**                                                                   **
+** Filename:  board_to_SCR.ulp                                       **
+**                                                                   **
+** Author:    Carlyn Maw                                             **
+**            carlynorama at gmail dot com                           **
+**                                                                   **
+** Extract X,Y coordinates, rotation and package name of components  **
+** on the board. Then creates SCR file so the layout can be          **
+** duplicated.                                                       **
+**                                                                   **
+***********************************************************************
+**                                                                   **
+** Legal issues: This program is provided as it is. Without any      **
+**               warranties of any kind of data lose or damages.     **	
+**                                                                   **
+** Feel free to modify and improve this program and let me know.     **
+**                                                                   **
+** Version:      0.2                                                 **
+** Date:         JUN 13 2011                                         **
+**                                                                   **
+***********************************************************************
+**                                                                   **
+** Version history                                                   **
+**                                                                   **
+** 0.1           initial version,  cmd-comp-coords-rot-board.ulp     **                                     **
+**               by TKooistra                                        **
+**                                                                   **
+** 0.2           changed name, eliminated extra code                 **
+**               cleaned up dialog boxes, added formating            **
+**               to export file so it can be used as-is              **
+**                                                                   **
+**                                                                   **
+***********************************************************************
+*/
+
+#usage "<b>Board Layout to SCR 0.2</b>\n"
+       "<p>"
+       "Extracts X,Y coordinates, rotation and package name of components"
+       "on the board. Then creates SCR file so the layout can be duplicated. "
+       "<author>Author: Tim Ruetz (tim@caiaq.de)</author>"
+
+real    GridDist = 50.0;
+enum    {unitINCH, unitMIL, unitMM, unitMIC};
+string  h, cmd = "";
+int     unit = unitMIL;   // predefined unit, can be changed to unitMM, unitINCH, unitMIC
+int     show_script = 1;  // predefined value for button "Show script"
+int     Result;
+string  Status = "";
+
+//get project path, if in board or schematic, otherwise library path
+string get_project_path() {
+    string s = "", p = "";;
+    if (library)  { library(L)  s = L.name; }
+    if (board)    { board(B)     s = B.name; }
+    if (schematic){ schematic(S) s = S.name; }
+    char c = '/';
+    int pos = strrchr(s, c);
+    if (pos >= 0) {
+        p = strsub(s, 0, pos + 1);
+    }
+    return p;
+}
+
+//converts whatever the current units are into MILs
+real u2unit(int u) {
+    if (unit == unitMIL)    { return u2mil(u); }
+    if (unit == unitMM)     { return u2mm(u); }
+    if (unit == unitINCH)   { return u2inch(u); }
+    if (unit == unitMIC)    { return u2mic(u); }
+}
+
+//creates a header for the file and puts it into cmd
+void Text_Header_For_Export(void) {
+    h = ""; 
+    h = "GRID MIL FINEST;\nDISPLAY 1 16  17  18  19  20  21  22  23  24  25  26  27  28  39  40  41  42  43  48  49  50  51  52;\n"; 
+    cmd += h;
+}
+
+//file that creates the command strings for the file and puts it into cmd
+void Parts_String_For_Export(void){
+  board(B) {
+    
+    // Remember the active layers:
+    int ActiveLayers[];
+    B.layers(L) {
+      ActiveLayers[L.number] = L.visible;
+    }
+
+    B.elements(E) {
+      Status = "Element: "+E.name; 
+      dlgRedisplay();
+      //does not have change package.
+      //h = ""; sprintf(h, "MOVE %s (%f %f);\nROTATE =R%f '%s'; \n", E.name, u2unit(E.x), u2unit(E.y), E.angle, E.name); 
+      //cmd += h;
+      // has change package in the format 'PACKAGE pname vname'
+      h = ""; 
+      sprintf(h, "MOVE %s (%f %f);\nROTATE =R%f '%s'; \nCHANGE PACKAGE %s %s;\n", E.name, u2unit(E.x), u2unit(E.y), E.angle, E.name, E.name, E.package.name); 
+      cmd += h;
+    }
+     
+   }
+  }
+
+//creates a footer for the file and puts it into cmd
+void Text_Footer_For_Export(void) {
+      h = ""; 
+      h = "GRID LAST;\n";
+      cmd += h;
+}
+
+//----------------------------------------------------------------------------------------- MAIN
+// if there is no board file for the project? Or if not from the board window?
+if (!board) {
+    dlgMessageBox(usage + "<hr><b>ERROR: No board!</b><p>\nThis program can only work in the board editor.");
+    exit(1);
+}
+
+dlgDialog("Export Component Data") {
+    dlgHBoxLayout {
+        dlgSpacing(10);
+        dlgVBoxLayout {
+            dlgLabel("Press the Export button to save a script file with \nthe commands ready to be loaded. \n\nYou will get a chance to see a copy after pressing \nthe button even if you cancel the save.");
+            dlgSpacing(10);
+            dlgLabel(Status, 1);
+            dlgHBoxLayout {
+            dlgPushButton("+&Export Data")   {
+                Status = "Busy...";
+                dlgRedisplay();
+                Text_Header_For_Export();
+                Parts_String_For_Export();
+                Text_Footer_For_Export();
+                string dest = dlgFileSave("Save Script File", get_project_path()+"Board_to_SCR_Export.scr", "*.scr");
+                if (dest != "") output(dest, "wt") {
+                    printf(cmd);
+                }
+                dlgAccept();
+            }
+            dlgPushButton("-&Cancel") exit(0);
+            }
+            dlgSpacing(7);
+        }
+    }
+};
+
+Result = 1;
+
+if (show_script) {
+Result = dlgDialog("Exported Data") {
+        dlgHBoxLayout {
+            dlgSpacing(500);
+        }
+
+        dlgVBoxLayout {
+            dlgLabel("The below is a copy of the SCR commands generated by this ULP.");
+            dlgTextEdit(cmd);
+        }
+        dlgHBoxLayout {
+            dlgPushButton("OK") dlgReject();
+        }
+    };
+}
+
+if (!Result) exit(0);
+
+exit(cmd);
